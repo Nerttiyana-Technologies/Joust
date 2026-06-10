@@ -40,6 +40,9 @@ internal static class NativeMethods
     [DllImport(LibraryName, EntryPoint = "joust_table_exists", CharSet = CharSet.Ansi)]
     public static extern int TableExists(IntPtr connection, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out int exists);
 
+    [DllImport(LibraryName, EntryPoint = "joust_list_tables")]
+    public static extern int ListTables(IntPtr connection, out IntPtr outNames);
+
     [DllImport(LibraryName, EntryPoint = "joust_table_open", CharSet = CharSet.Ansi)]
     public static extern int TableOpen(IntPtr connection, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out IntPtr table);
 
@@ -61,11 +64,13 @@ internal static class NativeMethods
     public static extern int TableCreateIpc(IntPtr connection, [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
         byte[] ipcSchema, long ipcLen, out IntPtr table);
 
-    [DllImport(LibraryName, EntryPoint = "joust_table_add_ipc")]
-    public static extern int TableAddIpc(IntPtr table, byte[] ipcData, long ipcLen);
+    // Zero-copy data path via the Arrow C Stream interface (ArrowArrayStream struct pointers).
 
-    [DllImport(LibraryName, EntryPoint = "joust_table_query_ipc", CharSet = CharSet.Ansi)]
-    public static extern int TableQueryIpc(IntPtr table,
+    [DllImport(LibraryName, EntryPoint = "joust_table_add_stream")]
+    public static extern int TableAddStream(IntPtr table, IntPtr arrowArrayStream);
+
+    [DllImport(LibraryName, EntryPoint = "joust_table_query_stream", CharSet = CharSet.Ansi)]
+    public static extern int TableQueryStream(IntPtr table,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? filter,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? selectCsv,
         float[]? vector, int vectorLen,
@@ -74,10 +79,7 @@ internal static class NativeMethods
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? ftsColumns,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? orderByColumn, int orderDescending,
         int limit, int offset,
-        out IntPtr outIpc, out long outLen);
-
-    [DllImport(LibraryName, EntryPoint = "joust_buffer_free")]
-    public static extern void BufferFree(IntPtr data, long len);
+        IntPtr outArrowArrayStream);
 
     [DllImport(LibraryName, EntryPoint = "joust_table_merge_insert_ipc", CharSet = CharSet.Ansi)]
     public static extern int TableMergeInsertIpc(IntPtr table, [MarshalAs(UnmanagedType.LPUTF8Str)] string keyColumn,

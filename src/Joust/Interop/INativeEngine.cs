@@ -16,6 +16,9 @@ public interface INativeEngine : IAsyncDisposable
     /// <summary>Returns true if a table with the given name exists.</summary>
     Task<bool> TableExistsAsync(string table, CancellationToken cancellationToken = default);
 
+    /// <summary>Lists the names of all tables in the database.</summary>
+    Task<IReadOnlyList<string>> ListTablesAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Drops a table and all its data.</summary>
     Task DropTableAsync(string table, CancellationToken cancellationToken = default);
 

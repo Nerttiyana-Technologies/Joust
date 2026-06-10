@@ -63,6 +63,10 @@ public sealed class LanceDbContext : IAsyncDisposable
     public Task<bool> TableExistsAsync(string name, CancellationToken cancellationToken = default) =>
         _engine.TableExistsAsync(name, cancellationToken);
 
+    /// <summary>Lists the names of all tables in the database.</summary>
+    public Task<IReadOnlyList<string>> ListTablesAsync(CancellationToken cancellationToken = default) =>
+        _engine.ListTablesAsync(cancellationToken);
+
     /// <summary>Drops a table.</summary>
     public Task DropTableAsync(string name, CancellationToken cancellationToken = default) =>
         _engine.DropTableAsync(name, cancellationToken);

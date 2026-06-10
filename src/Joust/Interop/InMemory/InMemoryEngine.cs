@@ -42,6 +42,14 @@ public sealed class InMemoryEngine : INativeEngine
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<string>> ListTablesAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+            return Task.FromResult<IReadOnlyList<string>>(
+                _tables.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList());
+    }
+
+    /// <inheritdoc />
     public Task DropTableAsync(string table, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -166,7 +174,12 @@ public sealed class InMemoryEngine : INativeEngine
         if (query.VectorQuery is { Length: > 0 } q && query.VectorColumn is { } vc)
         {
             result = result
-                .Select(r => (row: r, dist: Distance(r, vc, q, query.Metric)))
+                .Select(r =>
+                {
+                    var d = Distance(r, vc, q, query.Metric);
+                    r["_distance"] = (float)d; // surface the distance like LanceDB does
+                    return (row: r, dist: d);
+                })
                 .OrderBy(x => x.dist)
                 .Select(x => x.row);
         }

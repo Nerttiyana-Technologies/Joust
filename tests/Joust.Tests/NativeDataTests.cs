@@ -101,6 +101,33 @@ public class NativeDataTests
     }
 
     [Fact]
+    public async Task List_tables_and_score_via_native()
+    {
+        if (!Enabled())
+            return;
+
+        var dir = Path.Combine(Path.GetTempPath(), "joust-data-" + Guid.NewGuid().ToString("N"));
+        await using var ctx = await LanceDbContext.ConnectAsync(dir,
+            new LanceConnectOptions { EnableNativeBackend = true });
+
+        var table = await ctx.CreateTableAsync<Product>("products");
+        await table.AddAsync(Seed());
+
+        var names = await ctx.ListTablesAsync();
+        Assert.Contains("products", names);
+
+        float[] query = [1f, 0f, 0f, 0f];
+        (Product Item, double? Score)? top = null;
+        await foreach (var scored in table.VectorSearch(query).Take(1).AsScoredAsyncEnumerable())
+        {
+            top = scored;
+            break;
+        }
+        Assert.NotNull(top);
+        Assert.NotNull(top!.Value.Score); // LanceDB _distance surfaced
+    }
+
+    [Fact]
     public async Task Full_text_search_via_native()
     {
         if (!Enabled())

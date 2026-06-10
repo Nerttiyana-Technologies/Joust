@@ -22,8 +22,8 @@ use std::sync::OnceLock;
 
 use arrow::array::{RecordBatch, RecordBatchIterator, RecordBatchReader};
 use arrow::datatypes::SchemaRef;
+use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use arrow::ipc::reader::StreamReader;
-use arrow::ipc::writer::StreamWriter;
 use futures::TryStreamExt;
 use lance_index::scalar::FullTextSearchQuery;
 use lancedb::index::scalar::FtsIndexBuilder;
@@ -183,6 +183,22 @@ pub unsafe extern "C" fn joust_table_exists(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn joust_list_tables(connection: *mut c_void, out_names: *mut *mut c_char) -> i32 {
+    clear_error();
+    let Some(conn) = conn_ref(connection) else { return ERR };
+
+    match runtime().block_on(async { conn.table_names().execute().await }) {
+        Ok(names) => {
+            if !out_names.is_null() {
+                *out_names = to_cstring_ptr(names.join("\n"));
+            }
+            OK
+        }
+        Err(e) => fail(format!("table_names failed: {e}")),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn joust_table_open(
     connection: *mut c_void,
     name: *const c_char,
@@ -327,31 +343,38 @@ pub unsafe extern "C" fn joust_table_create_ipc(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn joust_table_add_ipc(
+pub unsafe extern "C" fn joust_table_add_stream(
     table: *mut c_void,
-    ipc_data: *const u8,
-    ipc_len: i64,
+    arrow_array_stream: *mut c_void,
 ) -> i32 {
     clear_error();
     let Some(table) = table_ref(table) else { return ERR };
+    if arrow_array_stream.is_null() {
+        return fail("null arrow_array_stream");
+    }
 
-    let bytes = slice::from_raw_parts(ipc_data, ipc_len as usize);
-    let (schema, batches) = match read_ipc(bytes) {
-        Ok(v) => v,
-        Err(e) => return fail(e),
+    // Import the C stream and drain it into owned batches (Send-safe for table.add).
+    let reader = match ArrowArrayStreamReader::from_raw(arrow_array_stream as *mut FFI_ArrowArrayStream) {
+        Ok(r) => r,
+        Err(e) => return fail(format!("import stream: {e}")),
+    };
+    let schema = reader.schema();
+    let batches: Vec<RecordBatch> = match reader.collect::<Result<Vec<_>, _>>() {
+        Ok(b) => b,
+        Err(e) => return fail(format!("read stream: {e}")),
     };
 
-    let reader: Box<dyn RecordBatchReader + Send> =
+    let owned: Box<dyn RecordBatchReader + Send> =
         Box::new(RecordBatchIterator::new(batches.into_iter().map(Ok), schema));
 
-    match runtime().block_on(async { table.add(reader).execute().await }) {
+    match runtime().block_on(async { table.add(owned).execute().await }) {
         Ok(_) => OK,
         Err(e) => fail(format!("add failed: {e}")),
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn joust_table_query_ipc(
+pub unsafe extern "C" fn joust_table_query_stream(
     table: *mut c_void,
     filter: *const c_char,
     select_csv: *const c_char,
@@ -365,13 +388,12 @@ pub unsafe extern "C" fn joust_table_query_ipc(
     _order_descending: i32,
     limit: i32,
     _offset: i32,
-    out_ipc: *mut *mut u8,
-    out_len: *mut i64,
+    out_stream: *mut c_void,
 ) -> i32 {
     clear_error();
     let Some(table) = table_ref(table) else { return ERR };
-    if out_ipc.is_null() || out_len.is_null() {
-        return fail("null out parameter");
+    if out_stream.is_null() {
+        return fail("null out_stream");
     }
 
     let filter = opt_cstr(filter);
@@ -436,26 +458,11 @@ pub unsafe extern "C" fn joust_table_query_ipc(
     // Prefer the schema of the returned data (handles column projection); fall back to table schema.
     let schema: SchemaRef = batches.first().map(|b| b.schema()).unwrap_or(full_schema);
 
-    let mut buf: Vec<u8> = Vec::new();
-    {
-        let mut writer = match StreamWriter::try_new(&mut buf, &schema) {
-            Ok(w) => w,
-            Err(e) => return fail(format!("ipc writer: {e}")),
-        };
-        for b in &batches {
-            if let Err(e) = writer.write(b) {
-                return fail(format!("ipc write: {e}"));
-            }
-        }
-        if let Err(e) = writer.finish() {
-            return fail(format!("ipc finish: {e}"));
-        }
-    }
-
-    let boxed = buf.into_boxed_slice();
-    let len = boxed.len();
-    *out_ipc = Box::into_raw(boxed) as *mut u8;
-    *out_len = len as i64;
+    // Export the result as a zero-copy Arrow C stream into the caller-provided struct.
+    let reader: Box<dyn RecordBatchReader + Send> =
+        Box::new(RecordBatchIterator::new(batches.into_iter().map(Ok), schema));
+    let ffi = FFI_ArrowArrayStream::new(reader);
+    std::ptr::write(out_stream as *mut FFI_ArrowArrayStream, ffi);
     OK
 }
 

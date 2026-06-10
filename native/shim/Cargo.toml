@@ -20,7 +20,7 @@ lance-index = "0.33"
 
 # Must match the arrow version lancedb depends on (lancedb 0.21.x → arrow 55.x), so RecordBatch
 # types unify and `table.add(...)` compiles. Verified via `cargo tree -i arrow`.
-arrow = "55"
+arrow = { version = "55", features = ["ffi"] }
 
 [profile.release]
 opt-level = 3

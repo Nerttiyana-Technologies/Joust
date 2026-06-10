@@ -41,9 +41,8 @@ public sealed class JoustVectorStore : VectorStore
     public override async IAsyncEnumerable<string> ListCollectionNamesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Joust does not expose a table listing on the context yet; return nothing rather than throw.
-        await Task.CompletedTask.ConfigureAwait(false);
-        yield break;
+        foreach (var name in await _context.ListTablesAsync(cancellationToken).ConfigureAwait(false))
+            yield return name;
     }
 
     /// <inheritdoc />
@@ -126,11 +125,11 @@ public sealed class JoustVectorStoreCollection<TKey, TRecord> : VectorStoreColle
         var query = _table.VectorSearch(vector).Take(top + skip);
 
         int index = 0;
-        await foreach (var record in query.AsAsyncEnumerable(cancellationToken).ConfigureAwait(false))
+        await foreach (var (record, score) in query.AsScoredAsyncEnumerable(cancellationToken).ConfigureAwait(false))
         {
             if (index++ < skip)
                 continue;
-            yield return new VectorSearchResult<TRecord>(record, score: null);
+            yield return new VectorSearchResult<TRecord>(record, score);
         }
     }
 

@@ -43,6 +43,7 @@ void    joust_connection_free(joust_connection connection);
 
 /* Table lifecycle. */
 int32_t joust_table_exists(joust_connection connection, const char* name, int32_t* out_exists);
+int32_t joust_list_tables(joust_connection connection, char** out_names /* newline-separated; free with joust_string_free */);
 int32_t joust_table_open(joust_connection connection, const char* name, joust_table* out_table);
 int32_t joust_table_create(joust_connection connection, const char* name, const void* arrow_schema /* ArrowSchema* */, joust_table* out_table);
 int32_t joust_table_drop(joust_connection connection, const char* name);
@@ -59,27 +60,27 @@ void    joust_table_free(joust_table table);
 int32_t joust_table_create_ipc(joust_connection connection, const char* name,
                                const uint8_t* ipc_schema, int64_t ipc_len, joust_table* out_table);
 
-/* Append rows supplied as an IPC stream payload. */
-int32_t joust_table_add_ipc(joust_table table, const uint8_t* ipc_data, int64_t ipc_len);
+/*
+ * Append rows via the Arrow C Stream interface (zero-copy). arrow_array_stream is an
+ * ArrowArrayStream* producer the library consumes (and releases).
+ */
+int32_t joust_table_add_stream(joust_table table, void* arrow_array_stream);
 
 int32_t joust_table_delete(joust_table table, const char* filter, int64_t* out_deleted);
 int32_t joust_table_count(joust_table table, const char* filter /* nullable */, int64_t* out_count);
 
 /*
- * Execute a query. Results are returned as a newly-allocated IPC payload in *out_ipc / *out_len,
- * which the caller must release with joust_buffer_free.
+ * Execute a query. The result set is exported into the caller-provided ArrowArrayStream
+ * (out_arrow_array_stream), which the caller imports and releases.
  */
-int32_t joust_table_query_ipc(joust_table table, const char* filter /* nullable */,
-                              const char* select_csv /* nullable */,
-                              const float* vector /* nullable */, int32_t vector_len,
-                              const char* vector_column /* nullable */, int32_t metric,
-                              const char* fts_text /* nullable */, const char* fts_columns /* nullable, csv */,
-                              const char* order_by_column /* nullable */, int32_t order_descending,
-                              int32_t limit /* -1 = none */, int32_t offset /* 0 = none */,
-                              uint8_t** out_ipc, int64_t* out_len);
-
-/* Frees a buffer returned by the library (e.g. from joust_table_query_ipc). */
-void joust_buffer_free(uint8_t* data, int64_t len);
+int32_t joust_table_query_stream(joust_table table, const char* filter /* nullable */,
+                                 const char* select_csv /* nullable */,
+                                 const float* vector /* nullable */, int32_t vector_len,
+                                 const char* vector_column /* nullable */, int32_t metric,
+                                 const char* fts_text /* nullable */, const char* fts_columns /* nullable, csv */,
+                                 const char* order_by_column /* nullable */, int32_t order_descending,
+                                 int32_t limit /* -1 = none */, int32_t offset /* 0 = none */,
+                                 void* out_arrow_array_stream);
 
 /* Merge-insert (upsert) rows supplied as an IPC payload, keyed by key_column. Flags are 0/1. */
 int32_t joust_table_merge_insert_ipc(joust_table table, const char* key_column,

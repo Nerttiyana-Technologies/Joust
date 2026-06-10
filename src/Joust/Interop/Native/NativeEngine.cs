@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Apache.Arrow.C;
 using Joust.Schema;
 
 namespace Joust.Interop.Native;
@@ -43,6 +44,19 @@ internal sealed class NativeEngine : INativeEngine
         return Task.FromResult(exists != 0);
     }
 
+    public Task<IReadOnlyList<string>> ListTablesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Check(NativeMethods.ListTables(Conn, out IntPtr namesPtr), "list tables");
+        var csv = (namesPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(namesPtr) : null) ?? "";
+        if (namesPtr != IntPtr.Zero)
+            NativeMethods.StringFree(namesPtr);
+        IReadOnlyList<string> names = csv.Length == 0
+            ? Array.Empty<string>()
+            : csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        return Task.FromResult(names);
+    }
+
     public Task DropTableAsync(string table, CancellationToken cancellationToken = default)
     {
         Check(NativeMethods.TableDrop(Conn, table), $"drop table '{table}'");
@@ -56,10 +70,23 @@ internal sealed class NativeEngine : INativeEngine
             return Task.CompletedTask;
 
         var batch = ArrowConvert.BuildBatch(schema, rows);
-        var ipc = ArrowConvert.WriteIpc(batch.Schema, new[] { batch });
         using var t = OpenTable(table);
-        Check(NativeMethods.TableAddIpc(t.DangerousGetHandle(), ipc, ipc.LongLength), $"add to '{table}'");
+        AddBatch(t, batch);
         return Task.CompletedTask;
+    }
+
+    private static unsafe void AddBatch(SafeTableHandle table, Apache.Arrow.RecordBatch batch)
+    {
+        var stream = (CArrowArrayStream*)NativeMemory.AllocZeroed((nuint)sizeof(CArrowArrayStream));
+        try
+        {
+            CArrowArrayStreamExporter.ExportArrayStream(ArrowConvert.ToArrayStream(batch.Schema, new[] { batch }), stream);
+            Check(NativeMethods.TableAddStream(table.DangerousGetHandle(), (IntPtr)stream), "add (stream)");
+        }
+        finally
+        {
+            NativeMemory.Free(stream);
+        }
     }
 
     public Task<MergeInsertResult> MergeInsertAsync(string table, TableSchema schema, string keyColumn, IReadOnlyList<IReadOnlyDictionary<string, object?>> rows, MergeInsertOptions options, CancellationToken cancellationToken = default)
@@ -109,30 +136,7 @@ internal sealed class NativeEngine : INativeEngine
 
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows;
         using (var t = OpenTable(table))
-        {
-            int rc = NativeMethods.TableQueryIpc(
-                t.DangerousGetHandle(),
-                query.Filter,
-                query.Select is null ? null : string.Join(",", query.Select),
-                query.VectorQuery, query.VectorQuery?.Length ?? 0,
-                query.VectorColumn, (int)query.Metric,
-                query.FtsText,
-                query.FtsColumns is null ? null : string.Join(",", query.FtsColumns),
-                query.OrderByColumn, query.OrderDescending ? 1 : 0,
-                nativeLimit, 0,
-                out IntPtr ipc, out long len);
-            Check(rc, $"query '{table}'");
-
-            try
-            {
-                rows = ReadIpcRows(ipc, len);
-            }
-            finally
-            {
-                if (ipc != IntPtr.Zero)
-                    NativeMethods.BufferFree(ipc, len);
-            }
-        }
+            rows = RunQueryStream(t, query, nativeLimit);
 
         IEnumerable<IReadOnlyDictionary<string, object?>> seq = rows;
         if (query.OrderByColumn is { } orderCol)
@@ -184,14 +188,36 @@ internal sealed class NativeEngine : INativeEngine
         }
     }
 
-    private static IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadIpcRows(IntPtr ipc, long len)
+    private static unsafe List<IReadOnlyDictionary<string, object?>> RunQueryStream(SafeTableHandle table, NativeQuery query, int nativeLimit)
     {
-        if (ipc == IntPtr.Zero || len <= 0)
-            return Array.Empty<IReadOnlyDictionary<string, object?>>();
+        var rows = new List<IReadOnlyDictionary<string, object?>>();
+        var stream = (CArrowArrayStream*)NativeMemory.AllocZeroed((nuint)sizeof(CArrowArrayStream));
+        try
+        {
+            Check(NativeMethods.TableQueryStream(
+                table.DangerousGetHandle(),
+                query.Filter,
+                query.Select is null ? null : string.Join(",", query.Select),
+                query.VectorQuery, query.VectorQuery?.Length ?? 0,
+                query.VectorColumn, (int)query.Metric,
+                query.FtsText,
+                query.FtsColumns is null ? null : string.Join(",", query.FtsColumns),
+                query.OrderByColumn, query.OrderDescending ? 1 : 0,
+                nativeLimit, 0,
+                (IntPtr)stream), "query (stream)");
 
-        var buffer = new byte[len];
-        Marshal.Copy(ipc, buffer, 0, (int)len);
-        return ArrowConvert.ReadIpcRows(buffer).ToList();
+            using var reader = CArrowArrayStreamImporter.ImportArrayStream(stream);
+            while (reader.ReadNextRecordBatchAsync().AsTask().GetAwaiter().GetResult() is { } batch)
+            {
+                rows.AddRange(ArrowConvert.RowsFromBatch(batch));
+                batch.Dispose();
+            }
+        }
+        finally
+        {
+            NativeMemory.Free(stream);
+        }
+        return rows;
     }
 
     public Task<string> CreateIndexAsync(string table, string column, IndexSpec spec, CancellationToken cancellationToken = default)

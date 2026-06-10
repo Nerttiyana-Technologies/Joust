@@ -183,6 +183,25 @@ public sealed class LanceQuery<T> where T : class
             yield return _mapper.FromRow(row);
     }
 
+    /// <summary>
+    /// Streams matching rows together with their relevance score (vector distance or full-text
+    /// score) when the backend provides one. Does not apply hybrid fusion.
+    /// </summary>
+    public async IAsyncEnumerable<(T Item, double? Score)> AsScoredAsyncEnumerable(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var row in _engine.QueryAsync(_schema.Name, BuildNativeQuery(_take), cancellationToken).ConfigureAwait(false))
+            yield return (_mapper.FromRow(row), ExtractScore(row));
+    }
+
+    private static double? ExtractScore(IReadOnlyDictionary<string, object?> row)
+    {
+        foreach (var key in new[] { "_distance", "_score", "_relevance_score" })
+            if (row.TryGetValue(key, out var v) && v is not null)
+                return System.Convert.ToDouble(v, System.Globalization.CultureInfo.InvariantCulture);
+        return null;
+    }
+
     private NativeQuery BuildNativeQuery(int? limit) => new()
     {
         Filter = _filter is null ? null : FilterTranslator.Translate(_filter, _schema),

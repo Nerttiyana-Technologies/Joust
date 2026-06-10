@@ -82,4 +82,37 @@ public class VectorDataAdapterTests
         await collection.DeleteAsync(2);
         Assert.Null(await collection.GetAsync(2));
     }
+
+    [Fact]
+    public async Task Vector_search_surfaces_score()
+    {
+        var collection = await SetupAsync();
+        float[] query = [1f, 0f, 0f, 0f];
+
+        VectorSearchResult<Product>? first = null;
+        await foreach (var hit in collection.SearchAsync(query, top: 1))
+        {
+            first = hit;
+            break;
+        }
+
+        Assert.NotNull(first);
+        Assert.NotNull(first!.Score); // vector distance surfaced as the score
+    }
+
+    [Fact]
+    public async Task List_collection_names_includes_created_collection()
+    {
+        var ctx = await LanceDbContext.ConnectAsync("memory://vd-list",
+            new LanceConnectOptions { UseInMemoryEngine = true });
+        var store = new JoustVectorStore(ctx);
+        var collection = store.GetCollection<int, Product>("products");
+        await collection.EnsureCollectionExistsAsync();
+
+        var names = new List<string>();
+        await foreach (var name in store.ListCollectionNamesAsync())
+            names.Add(name);
+
+        Assert.Contains("products", names);
+    }
 }

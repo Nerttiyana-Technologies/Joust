@@ -174,19 +174,51 @@ internal static class ArrowConvert
         using var reader = new ArrowStreamReader(ms);
         while (reader.ReadNextRecordBatch() is { } batch)
         {
-            var schema = batch.Schema;
-            for (int r = 0; r < batch.Length; r++)
-            {
-                var dict = new Dictionary<string, object?>(batch.ColumnCount, StringComparer.Ordinal);
-                for (int c = 0; c < batch.ColumnCount; c++)
-                {
-                    var field = schema.GetFieldByIndex(c);
-                    dict[field.Name] = ReadValue(batch.Column(c), r);
-                }
-                rows.Add(dict);
-            }
+            rows.AddRange(RowsFromBatch(batch));
+            batch.Dispose();
         }
         return rows;
+    }
+
+    /// <summary>Converts one Arrow record batch into column → value dictionaries.</summary>
+    public static List<IReadOnlyDictionary<string, object?>> RowsFromBatch(RecordBatch batch)
+    {
+        var schema = batch.Schema;
+        var rows = new List<IReadOnlyDictionary<string, object?>>(batch.Length);
+        for (int r = 0; r < batch.Length; r++)
+        {
+            var dict = new Dictionary<string, object?>(batch.ColumnCount, StringComparer.Ordinal);
+            for (int c = 0; c < batch.ColumnCount; c++)
+            {
+                var field = schema.GetFieldByIndex(c);
+                dict[field.Name] = ReadValue(batch.Column(c), r);
+            }
+            rows.Add(dict);
+        }
+        return rows;
+    }
+
+    /// <summary>Wraps in-memory batches as an <see cref="IArrowArrayStream"/> for C Data Interface export.</summary>
+    public static IArrowArrayStream ToArrayStream(ArrowSchema schema, IReadOnlyList<RecordBatch> batches) =>
+        new BatchArrayStream(schema, batches);
+
+    private sealed class BatchArrayStream : IArrowArrayStream
+    {
+        private readonly IReadOnlyList<RecordBatch> _batches;
+        private int _index;
+
+        public BatchArrayStream(ArrowSchema schema, IReadOnlyList<RecordBatch> batches)
+        {
+            Schema = schema;
+            _batches = batches;
+        }
+
+        public ArrowSchema Schema { get; }
+
+        public ValueTask<RecordBatch?> ReadNextRecordBatchAsync(CancellationToken cancellationToken = default) =>
+            new(_index < _batches.Count ? _batches[_index++] : null);
+
+        public void Dispose() { }
     }
 
     private static object? ReadValue(IArrowArray array, int i)
