@@ -101,6 +101,30 @@ public class NativeDataTests
     }
 
     [Fact]
+    public async Task Full_text_search_via_native()
+    {
+        if (!Enabled())
+            return;
+
+        var dir = Path.Combine(Path.GetTempPath(), "joust-data-" + Guid.NewGuid().ToString("N"));
+        await using var ctx = await LanceDbContext.ConnectAsync(dir,
+            new LanceConnectOptions { EnableNativeBackend = true });
+
+        var table = await ctx.CreateTableAsync<Product>("products");
+        await table.AddAsync(new[]
+        {
+            new Product { Id = 1, Category = "Tools", Text = "steel hammer", Embedding = [1f, 0f, 0f, 0f] },
+            new Product { Id = 2, Category = "Toys",  Text = "rubber ball",  Embedding = [0f, 1f, 0f, 0f] },
+            new Product { Id = 3, Category = "Tools", Text = "power drill",  Embedding = [0.9f, 0.1f, 0f, 0f] },
+        });
+
+        await table.CreateFullTextIndexAsync(x => x.Text);
+
+        var hits = await table.NearestToText("drill").ToListAsync();
+        Assert.Contains(3, hits.Select(r => r.Id));
+    }
+
+    [Fact]
     public async Task Index_create_list_drop_via_native()
     {
         if (!Enabled())

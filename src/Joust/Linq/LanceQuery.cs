@@ -23,6 +23,9 @@ public sealed class LanceQuery<T> where T : class
     private float[]? _vectorQuery;
     private string? _vectorColumn;
     private DistanceMetric _metric = DistanceMetric.Cosine;
+    private string? _ftsText;
+    private string[]? _ftsColumns;
+    private int _rerankK = 60;
     private string? _orderByColumn;
     private bool _orderDescending;
     private int? _take;
@@ -67,6 +70,24 @@ public sealed class LanceQuery<T> where T : class
         _vectorColumn = vcol.ColumnName;
         _metric = vcol.Metric;
         _vectorQuery = vector.ToArray();
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a full-text (BM25) search over the given columns (or all indexed text columns). Combine
+    /// with <see cref="NearestTo"/> for hybrid search, fused with Reciprocal Rank Fusion.
+    /// </summary>
+    public LanceQuery<T> NearestToText(string text, params string[] columns)
+    {
+        _ftsText = text;
+        _ftsColumns = columns is { Length: > 0 } ? columns : null;
+        return this;
+    }
+
+    /// <summary>Sets the Reciprocal Rank Fusion constant used when fusing hybrid results (default 60).</summary>
+    public LanceQuery<T> Rerank(int k = 60)
+    {
+        _rerankK = k <= 0 ? 60 : k;
         return this;
     }
 
@@ -150,20 +171,80 @@ public sealed class LanceQuery<T> where T : class
     /// <summary>Streams matching rows as they are produced by the engine.</summary>
     public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var query = new NativeQuery
+        // Hybrid: combine a vector search and a full-text search with Reciprocal Rank Fusion.
+        if (_vectorQuery is not null && _ftsText is not null)
         {
-            Filter = _filter is null ? null : FilterTranslator.Translate(_filter, _schema),
-            VectorQuery = _vectorQuery,
-            VectorColumn = _vectorColumn,
-            Metric = _metric,
-            OrderByColumn = _orderByColumn,
-            OrderDescending = _orderDescending,
-            Limit = _take,
-            Offset = _skip,
-        };
+            foreach (var row in await HybridFuseAsync(cancellationToken).ConfigureAwait(false))
+                yield return _mapper.FromRow(row);
+            yield break;
+        }
 
-        await foreach (var row in _engine.QueryAsync(_schema.Name, query, cancellationToken).ConfigureAwait(false))
+        await foreach (var row in _engine.QueryAsync(_schema.Name, BuildNativeQuery(_take), cancellationToken).ConfigureAwait(false))
             yield return _mapper.FromRow(row);
+    }
+
+    private NativeQuery BuildNativeQuery(int? limit) => new()
+    {
+        Filter = _filter is null ? null : FilterTranslator.Translate(_filter, _schema),
+        VectorQuery = _vectorQuery,
+        VectorColumn = _vectorColumn,
+        Metric = _metric,
+        FtsText = _ftsText,
+        FtsColumns = _ftsColumns,
+        OrderByColumn = _orderByColumn,
+        OrderDescending = _orderDescending,
+        Limit = limit,
+        Offset = _skip,
+    };
+
+    private async Task<List<IReadOnlyDictionary<string, object?>>> HybridFuseAsync(CancellationToken cancellationToken)
+    {
+        var keyColumn = _schema.KeyColumn?.ColumnName
+            ?? throw new NotSupportedExpressionException("Hybrid search requires a [Key] column to fuse results.");
+
+        int top = _take ?? 10;
+        int fetch = Math.Max(top * 5, 20);
+        string? filter = _filter is null ? null : FilterTranslator.Translate(_filter, _schema);
+
+        var vectorRows = await MaterializeAsync(new NativeQuery
+        {
+            Filter = filter, VectorQuery = _vectorQuery, VectorColumn = _vectorColumn, Metric = _metric, Limit = fetch,
+        }, cancellationToken).ConfigureAwait(false);
+
+        var ftsRows = await MaterializeAsync(new NativeQuery
+        {
+            Filter = filter, FtsText = _ftsText, FtsColumns = _ftsColumns, Limit = fetch,
+        }, cancellationToken).ConfigureAwait(false);
+
+        var scores = new Dictionary<object, double>();
+        var rowByKey = new Dictionary<object, IReadOnlyDictionary<string, object?>>();
+
+        void Fuse(List<IReadOnlyDictionary<string, object?>> rows)
+        {
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (!rows[i].TryGetValue(keyColumn, out var key) || key is null)
+                    continue;
+                scores[key] = (scores.TryGetValue(key, out var s) ? s : 0) + 1.0 / (_rerankK + i + 1);
+                rowByKey.TryAdd(key, rows[i]);
+            }
+        }
+
+        Fuse(vectorRows);
+        Fuse(ftsRows);
+
+        return scores.OrderByDescending(kv => kv.Value)
+                     .Take(top)
+                     .Select(kv => rowByKey[kv.Key])
+                     .ToList();
+    }
+
+    private async Task<List<IReadOnlyDictionary<string, object?>>> MaterializeAsync(NativeQuery query, CancellationToken cancellationToken)
+    {
+        var list = new List<IReadOnlyDictionary<string, object?>>();
+        await foreach (var row in _engine.QueryAsync(_schema.Name, query, cancellationToken).ConfigureAwait(false))
+            list.Add(row);
+        return list;
     }
 
     // -- helpers ----------------------------------------------------------

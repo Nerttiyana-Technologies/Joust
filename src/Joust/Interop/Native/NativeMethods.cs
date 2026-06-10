@@ -70,6 +70,8 @@ internal static class NativeMethods
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? selectCsv,
         float[]? vector, int vectorLen,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? vectorColumn, int metric,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? ftsText,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? ftsColumns,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? orderByColumn, int orderDescending,
         int limit, int offset,
         out IntPtr outIpc, out long outLen);

@@ -60,6 +60,18 @@ public sealed class LanceTable<T> where T : class
     /// <summary>Starts a nearest-neighbour search against the table's <c>[Vector]</c> column.</summary>
     public LanceQuery<T> VectorSearch(ReadOnlyMemory<float> queryVector) => NewQuery().NearestTo(queryVector);
 
+    /// <summary>Starts a full-text (BM25) search over the given columns (or all indexed text columns).</summary>
+    public LanceQuery<T> NearestToText(string text, params string[] columns) => NewQuery().NearestToText(text, columns);
+
+    /// <summary>Creates a full-text search index over the selected text column. Returns the index name.</summary>
+    public Task<string> CreateFullTextIndexAsync(Expression<Func<T, object?>> columnSelector, CancellationToken cancellationToken = default)
+    {
+        var column = ResolveColumn(columnSelector)
+            ?? throw new NotSupportedExpressionException(
+                $"CreateFullTextIndexAsync expects a single mapped column, e.g. x => x.Text. Got: '{columnSelector.Body}'.");
+        return _engine.CreateIndexAsync(_schema.Name, column, new IndexSpec { Kind = "FTS" }, cancellationToken);
+    }
+
     /// <summary>Starts a query ordered by a scalar column ascending.</summary>
     public LanceQuery<T> OrderByColumn<TKey>(Expression<Func<T, TKey>> keySelector) => NewQuery().OrderByColumn(keySelector);
 

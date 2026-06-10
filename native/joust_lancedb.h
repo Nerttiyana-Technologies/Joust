@@ -73,6 +73,7 @@ int32_t joust_table_query_ipc(joust_table table, const char* filter /* nullable 
                               const char* select_csv /* nullable */,
                               const float* vector /* nullable */, int32_t vector_len,
                               const char* vector_column /* nullable */, int32_t metric,
+                              const char* fts_text /* nullable */, const char* fts_columns /* nullable, csv */,
                               const char* order_by_column /* nullable */, int32_t order_descending,
                               int32_t limit /* -1 = none */, int32_t offset /* 0 = none */,
                               uint8_t** out_ipc, int64_t* out_len);

@@ -25,6 +25,8 @@ use arrow::datatypes::SchemaRef;
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
 use futures::TryStreamExt;
+use lance_index::scalar::FullTextSearchQuery;
+use lancedb::index::scalar::FtsIndexBuilder;
 use lancedb::index::Index;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use lancedb::{Connection, DistanceType, Table};
@@ -357,6 +359,8 @@ pub unsafe extern "C" fn joust_table_query_ipc(
     vector_len: i32,
     vector_column: *const c_char,
     metric: i32,
+    fts_text: *const c_char,
+    fts_columns: *const c_char,
     _order_by_column: *const c_char,
     _order_descending: i32,
     limit: i32,
@@ -373,6 +377,8 @@ pub unsafe extern "C" fn joust_table_query_ipc(
     let filter = opt_cstr(filter);
     let select = opt_cstr(select_csv);
     let vcol = opt_cstr(vector_column);
+    let fts = opt_cstr(fts_text);
+    let fts_cols = opt_cstr(fts_columns);
     let query_vector: Option<Vec<f32>> = if !vector.is_null() && vector_len > 0 {
         Some(slice::from_raw_parts(vector, vector_len as usize).to_vec())
     } else {
@@ -401,6 +407,16 @@ pub unsafe extern "C" fn joust_table_query_ipc(
                 vq = vq.limit(limit as usize);
             }
             vq.execute().await?.try_collect::<Vec<_>>().await?
+        } else if let Some(text) = &fts {
+            // Column targeting is honoured by the in-memory backend; the native path searches all
+            // FTS-indexed columns (LanceDB's default). fts_cols is intentionally unused here.
+            let _ = &fts_cols;
+            let fts_query = FullTextSearchQuery::new(text.clone());
+            base = base.full_text_search(fts_query);
+            if limit >= 0 {
+                base = base.limit(limit as usize);
+            }
+            base.execute().await?.try_collect::<Vec<_>>().await?
         } else {
             if limit >= 0 {
                 base = base.limit(limit as usize);
@@ -522,16 +538,22 @@ fn to_cstring_ptr(s: String) -> *mut c_char {
 pub unsafe extern "C" fn joust_index_create(
     table: *mut c_void,
     column: *const c_char,
-    _kind: *const c_char,
+    kind: *const c_char,
     _metric: i32,
     out_name: *mut *mut c_char,
 ) -> i32 {
     clear_error();
     let (Some(table), Some(column)) = (table_ref(table), cstr(column)) else { return ERR };
 
-    // Index::Auto lets LanceDB pick the right index for the column type (scalar vs vector).
+    let kind_upper = opt_cstr(kind).unwrap_or_default().to_uppercase();
+    let index = if kind_upper == "FTS" || kind_upper == "FULLTEXT" {
+        Index::FTS(FtsIndexBuilder::default())
+    } else {
+        Index::Auto // LanceDB picks a scalar/vector index based on the column type
+    };
+
     let res = runtime().block_on(async {
-        table.create_index(&[column], Index::Auto).execute().await?;
+        table.create_index(&[column], index).execute().await?;
         let indices = table.list_indices().await?;
         let name = indices
             .into_iter()

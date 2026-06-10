@@ -170,6 +170,15 @@ public sealed class InMemoryEngine : INativeEngine
                 .OrderBy(x => x.dist)
                 .Select(x => x.row);
         }
+        else if (!string.IsNullOrWhiteSpace(query.FtsText))
+        {
+            var terms = Tokenize(query.FtsText!);
+            result = result
+                .Select(r => (row: r, score: FtsScore(r, query.FtsColumns, terms)))
+                .Where(x => x.score > 0)
+                .OrderByDescending(x => x.score)
+                .Select(x => x.row);
+        }
         else if (query.OrderByColumn is { } orderCol)
         {
             var comparer = new RowValueComparer(orderCol);
@@ -252,6 +261,31 @@ public sealed class InMemoryEngine : INativeEngine
             return double.MaxValue;
 
         return VectorMath.Distance(vec, query, metric);
+    }
+
+    private static readonly char[] FtsSeparators = { ' ', '\t', '\n', '\r', ',', '.', ';', ':', '!', '?', '"', '\'', '(', ')', '-', '/' };
+
+    private static List<string> Tokenize(string text) =>
+        text.Split(FtsSeparators, StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.ToLowerInvariant())
+            .ToList();
+
+    private static int FtsScore(IReadOnlyDictionary<string, object?> row, IReadOnlyList<string>? columns, IReadOnlyList<string> terms)
+    {
+        var cols = columns is { Count: > 0 }
+            ? (IEnumerable<string>)columns
+            : row.Where(kv => kv.Value is string).Select(kv => kv.Key);
+
+        int score = 0;
+        foreach (var col in cols)
+        {
+            if (!row.TryGetValue(col, out var v) || v is not string s)
+                continue;
+            var words = Tokenize(s);
+            foreach (var term in terms)
+                score += words.Count(w => w == term || w.Contains(term, StringComparison.Ordinal));
+        }
+        return score;
     }
 
     private sealed class RowValueComparer(string column) : IComparer<Dictionary<string, object?>>

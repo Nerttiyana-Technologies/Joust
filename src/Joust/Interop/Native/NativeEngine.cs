@@ -116,6 +116,8 @@ internal sealed class NativeEngine : INativeEngine
                 query.Select is null ? null : string.Join(",", query.Select),
                 query.VectorQuery, query.VectorQuery?.Length ?? 0,
                 query.VectorColumn, (int)query.Metric,
+                query.FtsText,
+                query.FtsColumns is null ? null : string.Join(",", query.FtsColumns),
                 query.OrderByColumn, query.OrderDescending ? 1 : 0,
                 nativeLimit, 0,
                 out IntPtr ipc, out long len);

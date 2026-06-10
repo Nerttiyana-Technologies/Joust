@@ -22,6 +22,12 @@ public sealed class NativeQuery
     /// <summary>The distance metric to use for vector search.</summary>
     public DistanceMetric Metric { get; set; } = DistanceMetric.Cosine;
 
+    /// <summary>Full-text query terms (BM25). When set, the engine runs a full-text search.</summary>
+    public string? FtsText { get; set; }
+
+    /// <summary>Columns to full-text search; null means all indexed text columns.</summary>
+    public IReadOnlyList<string>? FtsColumns { get; set; }
+
     /// <summary>An optional scalar column to order by (ignored when a vector search is present).</summary>
     public string? OrderByColumn { get; set; }
 
