@@ -50,8 +50,27 @@ var hits = await table
     .ToListAsync();
 ```
 
-The same code runs against the embedded engine (`"/data/app.lance"`, `"s3://…"`) or a distributed
-cluster (`"db://…"`) once the native backend is wired — only the connection string changes.
+The same code runs against the embedded LanceDB engine (`"/data/app.lance"`, `"s3://…"`) or a
+distributed cluster (`"db://…"`) — only the connection string changes. Switch on the native engine
+with `new LanceConnectOptions { EnableNativeBackend = true }`; the per-RID binaries are bundled, so
+no Rust toolchain is needed to consume the package.
+
+## Features
+
+- **POCO-first schema** from `[Key]`, `[Vector]`, `[LanceIndex]`, `[Column]` attributes — no manual
+  Apache Arrow buffers.
+- **Compile-checked LINQ** — `Where` filters with refactor-safe property references; unsupported
+  expressions fail loudly instead of silently degrading to a full scan.
+- **Vector search** — `OrderBy(x => x.Embedding.CosineDistance(q))` or `table.VectorSearch(vector)`.
+- **Full-text & hybrid search** — `NearestToText(...)`, and vector + full-text fused with Reciprocal
+  Rank Fusion (`.Rerank(k)`).
+- **CRUD, merge-insert (upsert), counting, index management**, and streaming async results.
+- **Two backends, one API** — a pure-managed in-memory engine for dev/test and the native LanceDB
+  engine (C# → Rust → LanceDB, zero-copy Arrow), selected by the connection string.
+- **AI connector** — implements `Microsoft.Extensions.VectorData` (which is also the Semantic Kernel
+  vector-store connector).
+- **AOT-friendly, source-generated mapping** for `[JoustRecord]` types (reflection-free).
+- **Zero-config native deployment** — per-RID binaries shipped inside the NuGet package.
 
 ## Build & test
 
@@ -60,32 +79,32 @@ Requires the **.NET SDK 10.0.300** (pinned in `global.json`); the libraries mult
 
 ```bash
 dotnet build
-dotnet test
+dotnet test                 # in-memory backend; no native binary required
+```
+
+To build the native LanceDB shim (needs the Rust toolchain) and run the native-backed tests:
+
+```bash
+./build-native.sh
+JOUST_NATIVE_DATA=1 dotnet test
 ```
 
 ## Project layout
 
 | Project | Purpose |
 | :--- | :--- |
-| `src/Joust` | Core: attributes, schema compiler, LINQ engine, native abstraction, in-memory backend. |
-| `src/Joust.SemanticKernel` | Semantic Kernel adapter (skeleton). |
-| `src/Joust.VectorData` | `Microsoft.Extensions.VectorData` adapter (skeleton). |
-| `tests/Joust.Tests` | xUnit tests: translator, schema, naming, end-to-end. |
-
-## What works today
-
-- POCO → schema compilation from `[Key]`, `[Vector]`, `[LanceIndex]`, `[Column]`.
-- LINQ filter translation (`Where`) with compile-safe property references; unsupported expressions
-  fail loudly instead of silently scanning.
-- Nearest-neighbour vector search via `OrderBy(x => x.Embedding.CosineDistance(q))`.
-- Full CRUD, counting, and streaming against the in-memory backend.
+| `src/Joust` | Core: attributes, schema compiler, LINQ engine, interop, in-memory + native backends, compiled mapper. |
+| `src/Joust.VectorData` | `Microsoft.Extensions.VectorData` / Semantic Kernel connector. |
+| `src/Joust.SemanticKernel` | Semantic Kernel integration helper. |
+| `src/Joust.SourceGenerators` | Roslyn source generator for AOT-friendly `[JoustRecord]` mappers. |
+| `tests/Joust.Tests` | xUnit tests (in-memory + opt-in native). |
+| `benchmarks/Joust.Benchmarks` | BenchmarkDotNet PERF gates. |
+| `native/shim` | Rust `cdylib` wrapping the LanceDB engine (C ABI in `native/joust_lancedb.h`). |
 
 ## Roadmap
 
-1. P/Invoke `NativeEngine` over the LanceDB Rust FFI + RID-based native packaging.
-2. Source-generated POCO mapper (replace reflection on the hot path).
-3. Complete Semantic Kernel and VectorData adapter implementations.
-4. Full-text and hybrid search; index management surface.
+Post-1.0 enhancements are tracked in [`BACKLOG.md`](BACKLOG.md): cloud storage-options wiring,
+embedding generation in `SearchAsync` (string inputs), and broader LINQ translator coverage.
 
 ## License
 
