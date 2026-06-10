@@ -3,14 +3,24 @@
 An idiomatic, high-performance **.NET client and LINQ provider for [LanceDB](https://lancedb.github.io/lancedb/)**.
 
 Joust lets you work with LanceDB using plain C# classes, attributes, and compile-checked LINQ
-queries instead of raw Apache Arrow buffers and string filters. See
-[`docs/`](docs) and the architecture document for the full design.
+queries instead of raw Apache Arrow buffers and string filters.
 
-> **Status: early scaffold (`0.1.0-alpha`).** This milestone delivers the pure-managed core —
-> attribute schema, the LINQ filter/vector engine, and a complete in-memory backend — behind an
-> `INativeEngine` abstraction. The production **P/Invoke** backend that calls the native LanceDB
-> Rust engine drops in behind the same interface without changing application code (see ADR-1/ADR-7
-> in the architecture document).
+[![CI](https://github.com/Nerttiyana-Technologies/Joust/actions/workflows/ci.yml/badge.svg)](https://github.com/Nerttiyana-Technologies/Joust/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/Joust.svg)](https://www.nuget.org/packages/Joust)
+
+What you get: POCO models with `[Vector]` attributes, compile-checked LINQ filters and vector
+search, full-text and hybrid (RRF) search, a `Microsoft.Extensions.VectorData` / Semantic Kernel
+connector, an AOT-friendly source-generated mapper, and bundled native binaries (no Rust toolchain
+required to consume). The backend — in-memory, embedded LanceDB, object storage, or a remote
+cluster — is selected by the connection string.
+
+## Install
+
+```bash
+dotnet add package Joust
+# optional AI-framework connector (also pulls Microsoft.Extensions.VectorData)
+dotnet add package Joust.VectorData
+```
 
 ## Quick start
 

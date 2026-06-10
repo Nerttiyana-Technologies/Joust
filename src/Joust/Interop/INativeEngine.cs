@@ -4,8 +4,8 @@ namespace Joust.Interop;
 
 /// <summary>
 /// The single boundary between Joust's managed layers and a storage engine. The production
-/// implementation calls native LanceDB via P/Invoke; <see cref="InMemoryEngine"/> provides a
-/// pure-managed backend for development and testing. The public API depends only on this
+/// implementation calls native LanceDB via P/Invoke; <see cref="Joust.Interop.InMemory.InMemoryEngine"/>
+/// provides a pure-managed backend for development and testing. The public API depends only on this
 /// interface, so the backend is swappable without changing application code.
 /// </summary>
 public interface INativeEngine : IAsyncDisposable

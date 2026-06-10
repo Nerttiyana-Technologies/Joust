@@ -1,0 +1,47 @@
+name: Native CI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Builds the Rust shim and runs the native-backed tests (JOUST_NATIVE_DATA=1) on each OS.
+jobs:
+  native:
+    name: Native (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  rid: linux-x64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: macos-latest,   rid: osx-arm64 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build native shim
+        shell: bash
+        run: ./build-native.sh ${{ matrix.rid }}
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      - name: Test (native path)
+        run: dotnet test --configuration Release --no-build --verbosity normal
+        env:
+          JOUST_NATIVE_DATA: '1'

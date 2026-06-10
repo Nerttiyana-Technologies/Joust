@@ -5,15 +5,35 @@
     <RootNamespace>Joust</RootNamespace>
     <AssemblyName>Joust</AssemblyName>
     <PackageId>Joust</PackageId>
-    <Description>Idiomatic, high-performance .NET client and LINQ provider for LanceDB.</Description>
+    <Title>Joust — .NET client &amp; LINQ provider for LanceDB</Title>
+    <Description>Idiomatic, high-performance .NET client and LINQ provider for LanceDB. POCO models with [Vector] attributes, compile-checked LINQ filters and vector search, full-text and hybrid search, a Microsoft.Extensions.VectorData / Semantic Kernel connector, and bundled native binaries.</Description>
     <IsPackable>true</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Columnar interchange at the native boundary. Adjust the version if restore complains. -->
     <PackageReference Include="Apache.Arrow" Version="18.1.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Reference the source generator as an analyzer and bundle it in the package so consumers'
+       [JoustRecord] types get AOT-friendly mappers generated automatically. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Joust.SourceGenerators\Joust.SourceGenerators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="IncludeGeneratorInPackage" BeforeTargets="_GetPackageFiles">
+    <ItemGroup>
+      <None Include="..\Joust.SourceGenerators\bin\$(Configuration)\netstandard2.0\Joust.SourceGenerators.dll"
+            Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    </ItemGroup>
+  </Target>
 
   <!--
     Native binaries are produced by the Rust shim (see native/) and placed under
