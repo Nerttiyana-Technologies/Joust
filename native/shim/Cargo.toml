@@ -1,0 +1,25 @@
+[package]
+name = "joust_lancedb"
+version = "0.1.0"
+edition = "2021"
+description = "Native C ABI shim bridging Joust (.NET) to the LanceDB Rust engine."
+license = "Apache-2.0"
+
+[lib]
+# Produces libjoust_lancedb.dylib / .so / joust_lancedb.dll — the name Joust's resolver loads.
+name = "joust_lancedb"
+crate-type = ["cdylib"]
+
+[dependencies]
+lancedb = "0.21"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures = "0.3"
+
+# Must match the arrow version lancedb depends on (lancedb 0.21.x → arrow 55.x), so RecordBatch
+# types unify and `table.add(...)` compiles. Verified via `cargo tree -i arrow`.
+arrow = "55"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

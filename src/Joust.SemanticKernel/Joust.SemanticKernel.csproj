@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Joust.SemanticKernel</RootNamespace>
+    <AssemblyName>Joust.SemanticKernel</AssemblyName>
+    <PackageId>Joust.SemanticKernel</PackageId>
+    <Description>Semantic Kernel integration helpers for the Joust / LanceDB vector store.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Post-GA, Semantic Kernel consumes the same Microsoft.Extensions.VectorData connector. -->
+    <ProjectReference Include="..\Joust.VectorData\Joust.VectorData.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Joust.VectorData</RootNamespace>
+    <AssemblyName>Joust.VectorData</AssemblyName>
+    <PackageId>Joust.VectorData</PackageId>
+    <Description>Microsoft.Extensions.VectorData (and Semantic Kernel) connector for Joust / LanceDB.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Joust\Joust.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GA abstractions. Adjust the version if restore complains. -->
+    <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.7.0" />
+  </ItemGroup>
+
+</Project>

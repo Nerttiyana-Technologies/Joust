@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>Joust</RootNamespace>
+    <AssemblyName>Joust</AssemblyName>
+    <PackageId>Joust</PackageId>
+    <Description>Idiomatic, high-performance .NET client and LINQ provider for LanceDB.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Columnar interchange at the native boundary. Adjust the version if restore complains. -->
+    <PackageReference Include="Apache.Arrow" Version="18.1.0" />
+  </ItemGroup>
+
+  <!--
+    Native binaries are produced by the Rust shim (see native/) and placed under
+    native/runtimes/<rid>/native/. When present, they are packed into the NuGet package's
+    runtimes/<rid>/native/ layout (FR-1.1) and copied to the build output for local runs.
+    The Condition keeps the managed build working even when no binaries are present yet.
+  -->
+  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/../../native/runtimes')">
+    <None Include="$(MSBuildProjectDirectory)/../../native/runtimes/**/*.dll;$(MSBuildProjectDirectory)/../../native/runtimes/**/*.so;$(MSBuildProjectDirectory)/../../native/runtimes/**/*.dylib">
+      <Pack>true</Pack>
+      <PackagePath>runtimes/%(RecursiveDir)</PackagePath>
+      <Link>runtimes/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

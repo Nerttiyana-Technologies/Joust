@@ -1,0 +1,22 @@
+<Project>
+
+  <!-- Shared properties for every project in the Joust solution. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Don't fail the build on missing XML doc comments. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+
+    <Authors>Joust</Authors>
+    <Product>Joust</Product>
+    <Company>Joust</Company>
+    <Copyright>Copyright (c) Joust contributors</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <Version>0.1.0-alpha</Version>
+  </PropertyGroup>
+
+</Project>
